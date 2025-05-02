@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поиск остановок на Яндекс Картах</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #FFCC00;
+            color: #000;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #FFDB4D;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .stop-item {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .map-container {
+            margin-top: 20px;
+            height: 400px;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            border-radius: 4px;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Поиск остановок общественного транспорта</h1>
+        
+        <div class="form-group">
+            <label for="apiKey">API ключ Яндекс Карт:</label>
+            <input type="text" id="apiKey" placeholder="Введите ваш API ключ">
+        </div>
+        
+        <div class="form-group">
+            <label for="city">Город:</label>
+            <input type="text" id="city" placeholder="Например: Москва" value="Москва">
+        </div>
+        
+        <div class="form-group">
+            <label for="stopType">Тип остановки:</label>
+            <select id="stopType">
+                <option value="bus">Автобус</option>
+                <option value="tram">Трамвай</option>
+                <option value="trolleybus">Троллейбус</option>
+                <option value="all">Все типы</option>
+            </select>
+        </div>
+        
+        <button id="searchBtn">Найти остановки</button>
+        
+        <div id="error" class="error"></div>
+        
+        <div id="results"></div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=ваш_api_ключ&lang=ru_RU" type="text/javascript"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let map;
+            let placemarks = [];
+            
+            // Инициализация карты
+            ymaps.ready(initMap);
+            
+            function initMap() {
+                map = new ymaps.Map('map', {
+                    center: [55.751574, 37.573856], // Москва по умолчанию
+                    zoom: 10
+                });
+            }
+            
+            // Обработчик кнопки поиска
+            document.getElementById('searchBtn').addEventListener('click', function() {
+                const apiKey = document.getElementById('apiKey').value;
+                const city = document.getElementById('city').value;
+                const stopType = document.getElementById('stopType').value;
+                
+                if (!apiKey || !city) {
+                    showError('Пожалуйста, заполните все обязательные поля');
+                    return;
+                }
+                
+                searchStops(apiKey, city, stopType);
+            });
+            
+            // Функция поиска остановок
+            function searchStops(apiKey, city, stopType) {
+                const resultsDiv = document.getElementById('results');
+                const errorDiv = document.getElementById('error');
+                
+                resultsDiv.innerHTML = '<p>Идет поиск остановок...</p>';
+                errorDiv.textContent = '';
+                
+                // Определяем категорию остановки
+                let categories;
+                switch(stopType) {
+                    case 'bus':
+                        categories = 'stop,bus_stop';
+                        break;
+                    case 'tram':
+                        categories = 'stop,tram_stop';
+                        break;
+                    case 'trolleybus':
+                        categories = 'stop,trolleybus_stop';
+                        break;
+                    default:
+                        categories = 'stop';
+                }
+                
+                const url = `https://search-maps.yandex.ru/v1/?apikey=${apiKey}&text=остановка ${city}&lang=ru_RU&type=biz&results=500&categories=${categories}`;
+                
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Ошибка HTTP: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.features && data.features.length > 0) {
+                            displayResults(data.features);
+                            updateMap(data.features);
+                        } else {
+                            resultsDiv.innerHTML = '<p>Остановки не найдены</p>';
+                        }
+                    })
+                    .catch(error => {
+                        showError(`Ошибка при получении данных: ${error.message}`);
+                        resultsDiv.innerHTML = '';
+                    });
+            }
+            
+            // Отображение результатов
+            function displayResults(features) {
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = `<h3>Найдено остановок: ${features.length}</h3>`;
+                
+                features.slice(0, 50).forEach(feature => { // Ограничиваем вывод 50 остановками
+                    const meta = feature.properties.CompanyMetaData;
+                    const coords = feature.geometry.coordinates;
+                    
+                    const stopDiv = document.createElement('div');
+                    stopDiv.className = 'stop-item';
+                    stopDiv.innerHTML = `
+                        <h4>${meta.name || 'Название не указано'}</h4>
+                        <p><strong>Адрес:</strong> ${meta.address || 'Не указан'}</p>
+                        <p><strong>Координаты:</strong> ${coords[1]}, ${coords[0]}</p>
+                    `;
+                    
+                    resultsDiv.appendChild(stopDiv);
+                });
+                
+                if (features.length > 50) {
+                    resultsDiv.innerHTML += `<p>Показаны первые 50 из ${features.length} остановок</p>`;
+                }
+            }
+            
+            // Обновление карты с найденными остановками
+            function updateMap(features) {
+                // Удаляем старые метки
+                placemarks.forEach(pm => map.geoObjects.remove(pm));
+                placemarks = [];
+                
+                if (features.length === 0) return;
+                
+                // Добавляем новые метки
+                features.forEach(feature => {
+                    const coords = feature.geometry.coordinates;
+                    const meta = feature.properties.CompanyMetaData;
+                    
+                    const placemark = new ymaps.Placemark(
+                        [coords[1], coords[0]], 
+                        {
+                            hintContent: meta.name || 'Остановка',
+                            balloonContent: `
+                                <strong>${meta.name || 'Остановка'}</strong><br>
+                                <em>${meta.address || 'Адрес не указан'}</em>
+                            `
+                        },
+                        {
+                            preset: 'islands#circleDotIcon',
+                            iconColor: '#FFCC00'
+                        }
+                    );
+                    
+                    placemarks.push(placemark);
+                    map.geoObjects.add(placemark);
+                });
+                
+                // Центрируем карту по найденным остановкам
+                if (features.length === 1) {
+                    const coords = features[0].geometry.coordinates;
+                    map.setCenter([coords[1], coords[0]], 15);
+                } else {
+                    const bounds = features.reduce((bounds, feature) => {
+                        const coords = feature.geometry.coordinates;
+                        return bounds.extend([coords[1], coords[0]]);
+                    }, new ymaps.LinearRing([]));
+                    
+                    map.setBounds(bounds, { checkZoomRange: true });
+                }
+            }
+            
+            // Показать ошибку
+            function showError(message) {
+                document.getElementById('error').textContent = message;
+            }
+        });
+    </script>
+</body>
+</html>
