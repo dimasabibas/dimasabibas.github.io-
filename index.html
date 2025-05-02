@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Транспорт Тулы - Построение маршрутов</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=ваш_api_ключ&lang=ru_RU" type="text/javascript"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            background-color: #FFD700;
+            color: #000;
+            padding: 15px;
+            text-align: center;
+        }
+        .controls {
+            padding: 15px;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .map-container {
+            flex-grow: 1;
+            height: calc(100vh - 160px);
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        select, input, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #FFD700;
+            color: #000;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #FFC000;
+        }
+        .transport-type {
+            display: flex;
+            gap: 10px;
+        }
+        .transport-type label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+        .route-info {
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Транспорт Тулы - Построение маршрутов</h1>
+        </div>
+        <div class="controls">
+            <div class="transport-type">
+                <label><input type="radio" name="transport" value="bus" checked> Автобус</label>
+                <label><input type="radio" name="transport" value="trolleybus"> Троллейбус</label>
+                <label><input type="radio" name="transport" value="tram"> Трамвай</label>
+                <label><input type="radio" name="transport" value="minibus"> Маршрутка</label>
+            </div>
+            
+            <select id="routeSelect" disabled>
+                <option value="">Выберите маршрут...</option>
+            </select>
+            
+            <button id="showRoute">Показать маршрут</button>
+        </div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script>
+        // Инициализация карты
+        ymaps.ready(init);
+        
+        let map;
+        let routeCollection;
+        let currentRoute;
+        
+        // Маршруты транспорта Тулы (примерные данные)
+        const transportRoutes = {
+            bus: [
+                {number: '1', name: '1 - Кремль - Пролетарская', coordinates: []},
+                {number: '3', name: '3 - Косогорская - Центральный рынок', coordinates: []},
+                {number: '12', name: '12 - Менделеевский пос. - Заречье', coordinates: []},
+                {number: '18', name: '18 - Криволучье - Пос. Михалково', coordinates: []},
+                {number: '21', name: '21 - Косая Гора - Пролетарская', coordinates: []},
+                {number: '24', name: '24 - Пос. Ленинский - Площадь Победы', coordinates: []},
+                {number: '25', name: '25 - Пос. Октябрьский - Площадь Победы', coordinates: []},
+                {number: '28', name: '28 - Косая Гора - Московский вокзал', coordinates: []},
+                {number: '36', name: '36 - Менделеевский пос. - Заречье', coordinates: []}
+            ],
+            trolleybus: [
+                {number: '1', name: '1 - Московский вокзал - Ул. Революции', coordinates: []},
+                {number: '2', name: '2 - Московский вокзал - Ул. Оборонная', coordinates: []},
+                {number: '4', name: '4 - Ул. Революции - Ул. Оборонная', coordinates: []},
+                {number: '6', name: '6 - Ул. Революции - Ул. Металлургов', coordinates: []},
+                {number: '7', name: '7 - Московский вокзал - Ул. Металлургов', coordinates: []},
+                {number: '8', name: '8 - Ул. Оборонная - Ул. Металлургов', coordinates: []}
+            ],
+            tram: [
+                {number: '1', name: '1 - Московский вокзал - Ул. Революции', coordinates: []},
+                {number: '2', name: '2 - Московский вокзал - Ул. Оборонная', coordinates: []},
+                {number: '3', name: '3 - Ул. Революции - Ул. Оборонная', coordinates: []},
+                {number: '4', name: '4 - Ул. Революции - Ул. Металлургов', coordinates: []},
+                {number: '5', name: '5 - Московский вокзал - Ул. Металлургов', coordinates: []},
+                {number: '6', name: '6 - Ул. Оборонная - Ул. Металлургов', coordinates: []}
+            ],
+            minibus: [
+                {number: '12к', name: '12к - Менделеевский пос. - Заречье', coordinates: []},
+                {number: '32', name: '32 - Косая Гора - Московский вокзал', coordinates: []},
+                {number: '34', name: '34 - Криволучье - Пос. Михалково', coordinates: []},
+                {number: '40', name: '40 - Пос. Ленинский - Площадь Победы', coordinates: []},
+                {number: '50', name: '50 - Пос. Октябрьский - Площадь Победы', coordinates: []},
+                {number: '62', name: '62 - Кремль - Пролетарская', coordinates: []},
+                {number: '64', name: '64 - Косогорская - Центральный рынок', coordinates: []}
+            ]
+        };
+        
+        function init() {
+            // Создаем карту
+            map = new ymaps.Map('map', {
+                center: [54.193033, 37.617752], // Центр Тулы
+                zoom: 12
+            });
+            
+            // Коллекция для хранения маршрутов
+            routeCollection = new ymaps.GeoObjectCollection();
+            map.geoObjects.add(routeCollection);
+            
+            // Заполняем список маршрутов при выборе типа транспорта
+            document.querySelectorAll('input[name="transport"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    updateRouteList(this.value);
+                });
+            });
+            
+            // Обработчик кнопки показа маршрута
+            document.getElementById('showRoute').addEventListener('click', showRoute);
+            
+            // Инициализируем список маршрутов для автобусов (по умолчанию)
+            updateRouteList('bus');
+            
+            // Загрузка реальных координат маршрутов (в реальном приложении нужно загружать с сервера)
+            loadRouteCoordinates();
+        }
+        
+        function updateRouteList(transportType) {
+            const routeSelect = document.getElementById('routeSelect');
+            routeSelect.innerHTML = '<option value="">Выберите маршрут...</option>';
+            
+            transportRoutes[transportType].forEach(route => {
+                const option = document.createElement('option');
+                option.value = route.number;
+                option.textContent = route.name;
+                routeSelect.appendChild(option);
+            });
+            
+            routeSelect.disabled = false;
+        }
+        
+        function showRoute() {
+            const transportType = document.querySelector('input[name="transport"]:checked').value;
+            const routeNumber = document.getElementById('routeSelect').value;
+            
+            if (!routeNumber) {
+                alert('Пожалуйста, выберите маршрут');
+                return;
+            }
+            
+            // Находим выбранный маршрут
+            const selectedRoute = transportRoutes[transportType].find(r => r.number === routeNumber);
+            
+            // Очищаем предыдущий маршрут
+            routeCollection.removeAll();
+            
+            if (selectedRoute.coordinates && selectedRoute.coordinates.length > 0) {
+                // Если есть координаты, рисуем маршрут
+                currentRoute = new ymaps.Polyline(selectedRoute.coordinates, {
+                    balloonContent: `Маршрут ${selectedRoute.name}`
+                }, {
+                    strokeColor: getTransportColor(transportType),
+                    strokeWidth: 4,
+                    strokeOpacity: 0.7
+                });
+                
+                routeCollection.add(currentRoute);
+                
+                // Центрируем карту на маршруте
+                map.setBounds(currentRoute.geometry.getBounds(), {
+                    checkZoomRange: true
+                });
+                
+                // Добавляем метки остановок (пример)
+                addStopsToRoute(transportType, routeNumber);
+            } else {
+                alert('Координаты для этого маршрута не загружены');
+            }
+        }
+        
+        function getTransportColor(transportType) {
+            switch(transportType) {
+                case 'bus': return '#FF0000'; // Красный для автобусов
+                case 'trolleybus': return '#0000FF'; // Синий для троллейбусов
+                case 'tram': return '#008000'; // Зеленый для трамваев
+                case 'minibus': return '#FFA500'; // Оранжевый для маршруток
+                default: return '#000000';
+            }
+        }
+        
+        function addStopsToRoute(transportType, routeNumber) {
+            // В реальном приложении нужно загружать данные об остановках с сервера
+            // Здесь просто пример для демонстрации
+            
+            let stops = [];
+            
+            // Примерные остановки для маршрута 1 автобуса
+            if (transportType === 'bus' && routeNumber === '1') {
+                stops = [
+                    {name: 'Кремль', coords: [54.1928, 37.6187]},
+                    {name: 'Площадь Ленина', coords: [54.1945, 37.6152]},
+                    {name: 'Ул. Советская', coords: [54.1963, 37.6118]},
+                    {name: 'Центральный рынок', coords: [54.1981, 37.6084]},
+                    {name: 'Пролетарская', coords: [54.1999, 37.6050]}
+                ];
+            }
+            
+            // Добавляем метки остановок на карту
+            stops.forEach(stop => {
+                const stopMarker = new ymaps.Placemark(stop.coords, {
+                    balloonContent: `Остановка "${stop.name}"`,
+                    iconCaption: stop.name
+                }, {
+                    preset: 'islands#circleDotIcon',
+                    iconColor: getTransportColor(transportType)
+                });
+                
+                routeCollection.add(stopMarker);
+            });
+        }
+        
+        function loadRouteCoordinates() {
+            // В реальном приложении нужно загружать координаты маршрутов с сервера
+            // Здесь просто пример для демонстрации
+            
+            // Примерные координаты для маршрута 1 автобуса
+            const bus1Route = transportRoutes.bus.find(r => r.number === '1');
+            if (bus1Route) {
+                bus1Route.coordinates = [
+                    [54.1928, 37.6187], // Кремль
+                    [54.1935, 37.6175],
+                    [54.1945, 37.6152], // Площадь Ленина
+                    [54.1950, 37.6138],
+                    [54.1963, 37.6118], // Ул. Советская
+                    [54.1972, 37.6100],
+                    [54.1981, 37.6084], // Центральный рынок
+                    [54.1988, 37.6068],
+                    [54.1999, 37.6050]  // Пролетарская
+                ];
+            }
+            
+            // Можно добавить координаты для других маршрутов аналогично
+        }
+    </script>
+</body>
+</html>
