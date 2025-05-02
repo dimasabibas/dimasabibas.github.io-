@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Остановки по маршрутам с координатами</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .map-container {
+            flex: 2;
+            height: 600px;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .routes-container {
+            flex: 1;
+            max-height: 600px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .route {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .route-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #0066cc;
+            cursor: pointer;
+        }
+        .stop-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        .stop-coords {
+            color: #666;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 8px;
+        }
+        button {
+            background: #ffdb4d;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #ffcc00;
+        }
+        .highlight {
+            background: #fffacd;
+        }
+    </style>
+</head>
+<body>
+    <h1>Остановки общественного транспорта по маршрутам</h1>
+    
+    <div class="controls">
+        <button id="loadSample">Загрузить пример маршрутов</button>
+        <button id="clearAll">Очистить всё</button>
+    </div>
+    
+    <div class="container">
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+        
+        <div class="routes-container" id="routesList">
+            <p>Здесь будет список маршрутов и остановок</p>
+        </div>
+    </div>
+
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=4e515aa6-3cdf-4585-bb9a-3e5b19e40f10&lang=ru_RU"></script>
+    <script>
+        // Инициализация карты
+        let map;
+        let objectManager;
+        
+        ymaps.ready(init);
+        
+        function init() {
+            map = new ymaps.Map('map', {
+                center: [55.751574, 37.573856],
+                zoom: 11
+            });
+            
+            objectManager = new ymaps.ObjectManager({
+                clusterize: true,
+                gridSize: 64
+            });
+            
+            map.geoObjects.add(objectManager);
+            
+            // Обработчики кнопок
+            document.getElementById('loadSample').addEventListener('click', loadSampleRoutes);
+            document.getElementById('clearAll').addEventListener('click', clearAll);
+        }
+        
+        // Загрузка примеров маршрутов
+        function loadSampleRoutes() {
+            const sampleData = {
+                "Автобус 25": [
+                    {name: "Ул. Ленина", coords: [55.751, 37.573]},
+                    {name: "Парк Горького", coords: [55.731, 37.605]},
+                    {name: "Центральный рынок", coords: [55.741, 37.625]}
+                ],
+                "Трамвай 3": [
+                    {name: "Вокзал", coords: [55.756, 37.658]},
+                    {name: "Ул. Советская", coords: [55.746, 37.638]},
+                    {name: "Площадь Революции", coords: [55.736, 37.618]}
+                ],
+                "Троллейбус 12": [
+                    {name: "Северный район", coords: [55.781, 37.633]},
+                    {name: "Школа №5", coords: [55.771, 37.623]},
+                    {name: "Главпочтамт", coords: [55.761, 37.613]}
+                ]
+            };
+            
+            displayRoutes(sampleData);
+        }
+        
+        // Отображение маршрутов и остановок
+        function displayRoutes(routesData) {
+            const routesList = document.getElementById('routesList');
+            routesList.innerHTML = '';
+            
+            const objectsToAdd = {
+                type: "FeatureCollection",
+                features: []
+            };
+            
+            let routeIndex = 0;
+            
+            for (const [routeName, stops] of Object.entries(routesData)) {
+                const routeElement = document.createElement('div');
+                routeElement.className = 'route';
+                routeElement.dataset.routeIndex = routeIndex;
+                
+                const routeTitle = document.createElement('div');
+                routeTitle.className = 'route-title';
+                routeTitle.textContent = routeName;
+                routeTitle.addEventListener('click', () => highlightRoute(routeIndex));
+                
+                routeElement.appendChild(routeTitle);
+                
+                // Добавляем остановки для этого маршрута
+                stops.forEach((stop, stopIndex) => {
+                    const stopElement = document.createElement('div');
+                    stopElement.className = 'stop-item';
+                    stopElement.dataset.routeIndex = routeIndex;
+                    stopElement.dataset.stopIndex = stopIndex;
+                    stopElement.innerHTML = `
+                        <div>${stop.name}</div>
+                        <div class="stop-coords">${stop.coords[0].toFixed(6)}, ${stop.coords[1].toFixed(6)}</div>
+                    `;
+                    
+                    // При клике на остановку центрируем карту
+                    stopElement.addEventListener('click', () => {
+                        map.setCenter(stop.coords, 17);
+                        
+                        // Снимаем выделение со всех остановок
+                        document.querySelectorAll('.stop-item').forEach(el => {
+                            el.classList.remove('highlight');
+                        });
+                        // Выделяем текущую остановку
+                        stopElement.classList.add('highlight');
+                    });
+                    
+                    routeElement.appendChild(stopElement);
+                    
+                    // Добавляем метку на карту
+                    objectsToAdd.features.push({
+                        type: "Feature",
+                        id: `route-${routeIndex}-stop-${stopIndex}`,
+                        geometry: {
+                            type: "Point",
+                            coordinates: stop.coords
+                        },
+                        properties: {
+                            hintContent: `${routeName}: ${stop.name}`,
+                            balloonContent: `
+                                <b>${routeName}</b><br>
+                                <b>${stop.name}</b><br>
+                                Координаты: ${stop.coords[0].toFixed(6)}, ${stop.coords[1].toFixed(6)}
+                            `,
+                            routeIndex: routeIndex,
+                            stopIndex: stopIndex
+                        },
+                        options: {
+                            preset: getPresetForRoute(routeName),
+                            iconColor: getColorForRoute(routeIndex)
+                        }
+                    });
+                });
+                
+                routesList.appendChild(routeElement);
+                routeIndex++;
+            }
+            
+            // Добавляем все объекты на карту
+            objectManager.add(objectsToAdd);
+            
+            // Подсветка маршрута при наведении
+            setupRouteHover();
+        }
+        
+        // Подсветка маршрута
+        function highlightRoute(routeIndex) {
+            // Снимаем выделение со всех маршрутов
+            document.querySelectorAll('.route').forEach(el => {
+                el.style.borderLeft = 'none';
+            });
+            
+            // Выделяем выбранный маршрут
+            const routeElement = document.querySelector(`.route[data-route-index="${routeIndex}"]`);
+            if (routeElement) {
+                routeElement.style.borderLeft = '3px solid #ffcc00';
+            }
+            
+            // Подсвечиваем остановки на карте
+            objectManager.setFilter(obj => {
+                return obj.properties.routeIndex === routeIndex;
+            });
+            
+            // Получаем координаты всех остановок маршрута
+            const stopsCoords = [];
+            document.querySelectorAll(`.stop-item[data-route-index="${routeIndex}"]`).forEach(stop => {
+                const coordsText = stop.querySelector('.stop-coords').textContent;
+                const [lat, lon] = coordsText.split(',').map(Number);
+                stopsCoords.push([lat, lon]);
+            });
+            
+            // Центрируем карту по маршруту
+            if (stopsCoords.length > 0) {
+                map.setBounds(stopsCoords, {checkZoomRange: true});
+            }
+        }
+        
+        // Настройка hover-эффектов
+        function setupRouteHover() {
+            document.querySelectorAll('.route-title').forEach(title => {
+                title.addEventListener('mouseenter', function() {
+                    const routeIndex = this.parentElement.dataset.routeIndex;
+                    objectManager.setFilter(obj => {
+                        return obj.properties.routeIndex == routeIndex;
+                    });
+                });
+                
+                title.addEventListener('mouseleave', function() {
+                    objectManager.setFilter(() => true);
+                });
+            });
+        }
+        
+        // Очистка всего
+        function clearAll() {
+            document.getElementById('routesList').innerHTML = '<p>Здесь будет список маршрутов и остановок</p>';
+            objectManager.removeAll();
+        }
+        
+        // Вспомогательные функции
+        function getPresetForRoute(routeName) {
+            if (routeName.includes('Автобус')) return 'islands#blueAutoCircleIcon';
+            if (routeName.includes('Трамвай')) return 'islands#greenTramCircleIcon';
+            if (routeName.includes('Троллейбус')) return 'islands#yellowTrolleybusCircleIcon';
+            return 'islands#redCircleIcon';
+        }
+        
+        function getColorForRoute(index) {
+            const colors = ['#0066ff', '#00cc66', '#ff6600', '#cc00cc', '#ffcc00'];
+            return colors[index % colors.length];
+        }
+    </script>
+</body>
+</html>
